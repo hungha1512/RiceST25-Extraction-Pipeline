@@ -1,0 +1,9 @@
+input:
+  cloudcompare_preprocessed: true
+
+preprocessing:
+  remove_invalid: true
+  remove_duplicates: true
+  duplicate_tolerance: 1.0e-7
+  minimum_points: 4096
+
