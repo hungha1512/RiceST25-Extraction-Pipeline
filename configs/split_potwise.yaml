@@ -1,0 +1,4 @@
+# Pot-wise split of the manuscript (Section III-E); one pot of each planting density in val and test.
+train: [C1.1, C1.4, C2.1, C2.2, C2.5, C3.1, C3.3]   # 136 scans
+val:   [C1.2, C2.3, C3.2]                           # 59 scans
+test:  [C1.3, C2.4, C3.4]                           # 60 scans

@@ -1,60 +1,44 @@
-input:
-  vertical_axis: z
-  scan_index: 0
-  apply_e57_pose: true
-  cloudcompare_preprocessed: true
-
-preprocessing:
-  remove_invalid: true
-  remove_duplicates: true
-  duplicate_tolerance: 1.0e-7
-  minimum_points: 4096
-  normal_k: 20
-
 model:
-  architecture: dgcnn
-  checkpoint: weights/dgcnn_best/dg_best.pth
-  metadata: weights/dgcnn_best/model.yaml
-
+  k: 20
+features:
+  mode: xyz_h_n
+  normal_k: 20
+  use_file_normals: true
 inference:
   device: auto
-  chunk_size: 4096
-  batch_size: 1
-  voting_passes: 3
+  num_points: 4096
+  extra_passes: 3
+  batch_size: 8
   seed: 42
-
-postprocessing:
-  minimum_class_points: 50
-
 height:
-  enabled: true
-  pot_real_height_cm: 14.7
+  pot_height_cm: 14.7
   pot_percentile: 99.0
   plant_percentile: 100.0
   strict_pot_percentile: 95.0
   dbscan:
     enabled: true
-    eps_normalized: 0.02
+    eps_m: 0.02
     min_samples: 10
     min_cluster_size: 100
+    map_radius_factor: 3.0
     max_fit_points: 50000
-    map_radius_multiplier: 3.0
-
-tiller_count:
-  enabled: true
-  method: chm_local_maxima
-  raster:
-    rows: 35
-    cols: 25
-  gaussian:
-    sigma_px: 1.0
-  local_maxima:
-    min_distance_px: 3
-    exclude_border: false
-
-output:
-  save_segmented_cloud: true
-  save_class_clouds: true
-  save_intermediate_arrays: true
-  save_visualizations: true
-
+  min_class_points: 50
+tillers:
+  cell_size_m: 0.008
+  sigma_cells: 1.0
+  window: 3
+  min_height_ratio: 0.25
+evaluation:
+  n_bootstrap: 10000
+  bootstrap_seed: 0
+training:
+  num_points: 4096
+  batch_size: 8
+  lr: 0.001
+  weight_decay: 0.0001
+  epochs: 150
+  patience: 20
+  lopo_epochs: 60
+  lopo_patience: 10
+  seed: 42
+  num_workers: 2

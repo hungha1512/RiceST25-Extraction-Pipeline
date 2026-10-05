@@ -1,0 +1,8 @@
+{
+  "source": "Ha et al., RiceST25-3D (manuscript ST25_3D_0410): 255 scans, DGCNN leave-one-pot-out, out-of-fold",
+  "mIoU_full_cloud_mean_%": 93.83,
+  "height": {"MAE": 3.41, "RMSE": 4.90, "RRMSE_%": 6.31, "R2": 0.93, "Bias": -3.08},
+  "height_oof_offset": {"MAE": 2.69},
+  "height_lodged_MAE": 1.62,
+  "tillers": {"MAE": 6.19, "RMSE": 8.13, "Bias": 3.37, "R2": 0.10}
+}

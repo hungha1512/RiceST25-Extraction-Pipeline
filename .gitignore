@@ -18,3 +18,8 @@ outputs/*
 sample_data/*
 !sample_data/README.md
 
+
+# Large / generated artefacts: provide them locally, never commit them
+data/RiceST25-3D/
+*.ply
+*.e57

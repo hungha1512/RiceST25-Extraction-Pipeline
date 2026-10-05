@@ -1,6 +1,0 @@
-input:
-  vertical_axis: z
-  scan_index: 0
-  apply_e57_pose: true
-  cloudcompare_preprocessed: true
-
