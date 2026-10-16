@@ -1,0 +1,12 @@
+numpy>=1.26
+scipy>=1.11
+scikit-learn>=1.4
+pandas>=2.1
+plyfile>=1.0
+PyYAML>=6.0
+torch>=2.2
+
+# optional
+# open3d>=0.18     # surface normals computed exactly as in the research notebook (NumPy fallback otherwise)
+# pye57>=0.4.19    # read raw .e57 exports
+# pytest>=8.0      # run the tests

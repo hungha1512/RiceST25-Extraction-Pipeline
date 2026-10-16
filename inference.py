@@ -1,10 +1,12 @@
-"""Whole-cloud inference: every point is labelled by averaging the votes of 4096-point groups."""
+"""Whole-cloud inference (votes of 4096-point groups) and the model -> height / tillers step."""
 from __future__ import annotations
 
 import numpy as np
 import torch
 
-from .features import build_features, estimate_normals, normalize_xyz
+from phenotyping.height import plant_height
+from phenotyping.tillers import count_tillers
+from utils.features import build_features, estimate_normals, normalize_xyz
 
 
 @torch.no_grad()
@@ -58,3 +60,33 @@ def segment_cloud(
         prob = model(x).exp().cpu().numpy()                                          # (B, P, classes)
         np.add.at(votes, batch.reshape(-1), prob.reshape(-1, prob.shape[-1]))
     return votes.argmax(-1).astype(np.int64)
+
+
+def pooled_miou(pred: np.ndarray, target: np.ndarray, num_classes: int = 2) -> tuple[float, list[float]]:
+    """mIoU over the points of one cloud (classes absent from both pred and target are skipped)."""
+    ious = []
+    for c in range(num_classes):
+        tp = int(((pred == c) & (target == c)).sum())
+        denom = tp + int(((pred == c) & (target != c)).sum()) + int(((pred != c) & (target == c)).sum())
+        ious.append(tp / denom if denom else float("nan"))
+    return float(np.nanmean(ious)), ious
+
+
+def analyze_cloud(model, cloud: dict, cfg: dict, device) -> dict:
+    """Segment a cloud and extract both traits. ``cloud`` is the dict returned by ``io.read_cloud``."""
+    inf, feat = cfg["inference"], cfg["features"]
+    xyz = cloud["xyz"]
+    normal = cloud["normal"] if feat["use_file_normals"] else None
+    pred = segment_cloud(
+        model, xyz, normal, mode=feat["mode"], num_points=inf["num_points"], extra_passes=inf["extra_passes"],
+        batch_size=inf["batch_size"], normal_k=feat["normal_k"], seed=inf["seed"], device=device,
+    )
+    out = {"pred": pred, "height": None, "tillers": None}
+    out["height"] = plant_height(xyz, pred, cfg, np.random.default_rng(inf["seed"]))
+    try:
+        out["tillers"] = count_tillers(xyz[pred == 1], cfg)   # all Plant points, no DBSCAN (as evaluated)
+    except ValueError:
+        pass
+    if cloud.get("label") is not None:
+        out["miou_full"], out["iou_per_class"] = pooled_miou(pred, cloud["label"])
+    return out

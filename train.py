@@ -1,6 +1,9 @@
-"""Optional: retrain DGCNN (pot-wise split or leave-one-pot-out) with the manuscript's settings."""
-from __future__ import annotations
+"""Train DGCNN for plant-pot segmentation (Table II settings).
 
+    python train.py --data data/RiceST25-3D --output outputs/train            # pot-wise split
+    python train.py --data data/RiceST25-3D --output outputs/lopo --lopo      # 13 leave-one-pot-out folds
+"""
+import argparse
 import json
 import random
 import time
@@ -10,100 +13,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+import yaml
+from torch.utils.data import DataLoader
 
-from .features import INPUT_DIM, build_features, estimate_normals, normalize_xyz
-from .io import read_ply
-from .models import DGCNNSeg, resolve_device
+from datasets.rice import RiceDataset, class_weights, pot_of
+from models.dgcnn import DGCNNSeg, resolve_device
+from utils.config import load_config
+from utils.features import INPUT_DIM
+from utils.seg_metrics import evaluate
 
 
 def set_all_seeds(seed: int) -> None:
     random.seed(seed); np.random.seed(seed); torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic, torch.backends.cudnn.benchmark = True, False
-
-
-def pot_of(path) -> str:
-    return Path(path).stem.split("_")[0]
-
-
-def cached_normals(path, xyz, k: int, cache_dir: Path | None) -> np.ndarray:
-    """Normals of the full cloud (file normals if present), cached as .npy next to the run outputs."""
-    cache = cache_dir / f"{Path(path).stem}_n{k}.npy" if cache_dir else None
-    if cache is not None and cache.exists():
-        return np.load(cache)
-    normal = estimate_normals(xyz, k)
-    if cache is not None:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        np.save(cache, normal)
-    return normal
-
-
-class RiceDataset(Dataset):
-    """Random (train) or fixed (val/test) subset of ``num_points`` points per labelled scan."""
-
-    def __init__(self, files, mode="xyz_h_n", num_points=4096, augment=False, normal_k=20,
-                 cache_dir=None, eval_seed=12345):
-        self.files, self.mode, self.num_points, self.augment = list(files), mode, num_points, augment
-        self.normal_k, self.cache_dir, self.eval_seed = normal_k, cache_dir, eval_seed
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, idx):
-        data = read_ply(self.files[idx])
-        if data["label"] is None:
-            raise ValueError(f"{self.files[idx]} has no Pot/Plant labels")
-        n = len(data["xyz"])
-        rng = np.random if self.augment else np.random.default_rng(self.eval_seed + idx)
-        pick = rng.choice(n, self.num_points, replace=n < self.num_points)
-        xyz, label = data["xyz"][pick], data["label"][pick]
-        normal = None
-        if self.mode == "xyz_h_n":
-            full = data["normal"] if data["normal"] is not None else cached_normals(
-                self.files[idx], data["xyz"], self.normal_k, self.cache_dir)
-            normal = full[pick].copy()
-        xyz = normalize_xyz(xyz)
-        if self.augment:  # one rotation about z shared by coordinates and normals, then scale and jitter
-            t = np.random.uniform(0, 2 * np.pi); c, s = np.cos(t), np.sin(t)
-            rot = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], np.float32)
-            xyz = (xyz @ rot.T) * np.float32(np.random.uniform(0.85, 1.15))
-            xyz = xyz + np.random.normal(0, 0.005, xyz.shape).astype(np.float32)
-            normal = normal @ rot.T if normal is not None else None
-        feat = build_features(xyz, normal, self.mode).astype(np.float32)
-        return torch.from_numpy(np.ascontiguousarray(feat)).T, torch.from_numpy(label).long()
-
-
-def class_weights(files, num_classes=2) -> torch.Tensor:
-    """Inverse-frequency weights from the training scans, clipped to [0.5, 10]."""
-    counts = np.zeros(num_classes)
-    for f in files:
-        lab = read_ply(f)["label"]
-        counts += np.bincount(lab, minlength=num_classes)
-    counts = np.where(counts == 0, 1, counts)
-    return torch.tensor(np.clip(counts.sum() / (num_classes * counts), 0.5, 10.0), dtype=torch.float32)
-
-
-def _miou(pred, tgt, num_classes=2):
-    ious = []
-    for c in range(num_classes):
-        tp = ((pred == c) & (tgt == c)).sum().item()
-        d = tp + ((pred == c) & (tgt != c)).sum().item() + ((pred != c) & (tgt == c)).sum().item()
-        ious.append(tp / d if d else float("nan"))
-    return float(np.nanmean(ious)), ious
-
-
-@torch.no_grad()
-def evaluate(model, loader, device, num_classes=2) -> dict:
-    """mIoU pooled over all points of the loader, plus the mean/SD of per-scan mIoU."""
-    model.eval()
-    preds, tgts, per_scan = [], [], []
-    for x, y in loader:
-        p = model(x.to(device)).argmax(-1).cpu()
-        per_scan += [_miou(p[b], y[b], num_classes)[0] for b in range(len(p))]
-        preds.append(p); tgts.append(y)
-    miou, ious = _miou(torch.cat(preds), torch.cat(tgts), num_classes)
-    return {"miou": miou, "iou_per_class": ious, "miou_scan_mean": float(np.nanmean(per_scan)),
-            "miou_scan_std": float(np.nanstd(per_scan, ddof=1)) if len(per_scan) > 1 else 0.0, "scan_mious": per_scan}
 
 
 def train_model(model, train_loader, val_loader, weights, save_path, device, epochs=150, patience=20,
@@ -191,3 +113,21 @@ def train_lopo(files, out_dir, cfg, only: list[str] | None = None) -> list[dict]
         meta.write_text(json.dumps(res, indent=2)); results.append(res)
         print(f"[{i + 1}/{len(pots)}] {test_pot}: test mIoU {res['test']['miou'] * 100:.2f}% ({hist['train_minutes']:.0f} min)")
     return results
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--data", required=True, help="folder of labelled <pot>_<date>.ply scans")
+    ap.add_argument("--output", default="outputs/train")
+    ap.add_argument("--split", default="configs/split_potwise.yaml")
+    ap.add_argument("--mode", default="xyz_h_n", choices=list(INPUT_DIM), help="input features: 3D, 4D or 7D")
+    ap.add_argument("--seed", type=int)
+    ap.add_argument("--lopo", action="store_true", help="leave-one-pot-out instead of the pot-wise split")
+    ap.add_argument("--pots", nargs="*", help="with --lopo: only these held-out pots")
+    ap.add_argument("--config", help="YAML overriding configs/default.yaml")
+    args = ap.parse_args()
+    cfg, files = load_config(args.config), sorted(Path(args.data).rglob("*.ply"))
+    if args.lopo:
+        train_lopo(files, args.output, cfg, args.pots)
+    else:
+        print(json.dumps(train_split(files, yaml.safe_load(open(args.split)), args.output, cfg, args.mode, args.seed), indent=2))

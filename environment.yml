@@ -1,0 +1,19 @@
+name: ricest25
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch>=2.2
+  - pytorch-cuda=12.1
+  - numpy
+  - scipy
+  - scikit-learn
+  - pandas
+  - pyyaml
+  - pip
+  - pip:
+      - plyfile
+      - open3d
+      - pytest

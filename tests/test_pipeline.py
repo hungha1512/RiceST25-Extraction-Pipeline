@@ -2,12 +2,12 @@ import numpy as np
 import pandas as pd
 import torch
 
-from ricest25.config import DEFAULTS, load_config
-from ricest25.evaluation import bootstrap_ci, height_by_group, oof_height_calibration, parse_scan_id, tillers_by_subset, trait_metrics
-from ricest25.features import build_features, estimate_normals, normalize_xyz
-from ricest25.inference import segment_cloud
-from ricest25.io import read_ply, write_ply
-from ricest25.models import DGCNNSeg, load_dgcnn
+from utils.config import DEFAULTS, load_config
+from utils.metrics import bootstrap_ci, height_by_group, oof_height_calibration, parse_scan_id, tillers_by_subset, trait_metrics
+from utils.features import build_features, estimate_normals, normalize_xyz
+from inference import segment_cloud
+from utils.pointcloud import read_ply, write_ply
+from models.dgcnn import DGCNNSeg, load_dgcnn
 
 from conftest import synthetic_scan
 

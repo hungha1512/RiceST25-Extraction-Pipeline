@@ -1,7 +1,8 @@
 import numpy as np
 
-from ricest25.config import load_config
-from ricest25.phenotypes import canopy_height_model, count_tillers, filter_outliers, plant_height
+from utils.config import load_config
+from phenotyping.height import filter_outliers, plant_height
+from phenotyping.tillers import canopy_height_model, count_tillers
 
 from conftest import synthetic_scan
 

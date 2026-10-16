@@ -2,9 +2,10 @@ import numpy as np
 import pandas as pd
 from plyfile import PlyData, PlyElement
 
-from ricest25.config import load_config
-from ricest25.reproduce import run_reproduction
-from ricest25.train import RiceDataset, class_weights, train_lopo
+from utils.config import load_config
+from datasets.rice import RiceDataset, class_weights
+from reproduce import run_reproduction
+from train import train_lopo
 
 from conftest import synthetic_scan
 
